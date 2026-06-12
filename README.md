@@ -8,6 +8,8 @@
 ![Docker Pulls](https://img.shields.io/docker/pulls/toozej/gotts-it)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/toozej/gotts-it/total)
 
+<img src="img/avatar.png" alt="gotts-it avatar"/>
+
 CLI tool that extracts readable article text from a URL or local HTML file and synthesizes speech via a self-hosted Speaches TTS server (OpenAI-compatible API).
 
 ## Usage

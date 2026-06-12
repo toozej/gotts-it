@@ -148,5 +148,6 @@ func init() {
 	rootCmd.AddCommand(
 		man.NewManCmd(),
 		version.Command(),
+		newAvatarCmd(),
 	)
 }
