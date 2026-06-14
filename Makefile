@@ -45,7 +45,7 @@ else
 	OPENER=open
 endif
 
-.PHONY: all vet test build release verify run up down install local local-vet local-test local-cover local-run local-kill local-iterate local-release-test local-release local-sign local-verify local-release-verify local-install docker-login pre-commit-install pre-commit-run pre-commit pre-reqs update-golang-version upload-secrets-to-gh upload-secrets-envfile-to-1pass docs diagrams mutation-test test-changed watch-test profile-cpu profile-mem profile-all benchmark speaches-up speaches-down clean help
+.PHONY: all vet test build release verify run up down install local local-vet local-test local-cover local-run local-kill local-iterate local-release-test local-release local-sign local-verify local-release-verify local-install docker-login pre-commit-install pre-commit-run pre-commit pre-reqs update-golang-version upload-secrets-to-gh upload-secrets-envfile-to-1pass docs diagrams mutation-test test-changed watch-test profile-cpu profile-mem profile-all benchmark speaches-up speaches-down clean help distroless-build
 
 all: vet pre-commit clean test build ## Run default workflow via Docker
 local: local-update-deps local-vendor local-vet pre-commit clean local-test local-cover local-build local-release-test ## Run default workflow using locally installed Golang toolchain
@@ -86,9 +86,15 @@ verify: ## Verify Docker image with Cosign
 	--certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
 	$(IMAGE_AUTHOR)/$(IMAGE_NAME):$(IMAGE_TAG)
 
-run: ## Run built Docker image
+URLS ?= https://en.wikipedia.org/wiki/Readability
+
+run: ## Run built Docker image with comma-separated URLS (e.g. make run URLS=http://a.com,https://b.com)
 	-docker kill $(IMAGE_NAME)
-	docker run --rm --name $(IMAGE_NAME) --env-file $(CURDIR)/.env $(IMAGE_AUTHOR)/$(IMAGE_NAME):$(IMAGE_TAG)
+	@URLS_LIST=$$(echo "$(URLS)" | tr ',' '\n'); \
+	ENV_FILE=$$(test -e $(CURDIR)/.env && echo "--env-file $(CURDIR)/.env" || echo ""); \
+	echo "$$URLS_LIST" | docker run --rm -i --name $(IMAGE_NAME) $$ENV_FILE \
+		-v $(CURDIR)/out:/out \
+		$(IMAGE_AUTHOR)/$(IMAGE_NAME):$(IMAGE_TAG) server --output-dir /out
 
 up: test build ## Run Docker Compose project with build Docker image
 	docker compose -f docker-compose.yml down --remove-orphans

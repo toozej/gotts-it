@@ -11,6 +11,8 @@ services:
       - speaches
     env_file:
       - gotts-it.env
+    command: ["server", "--output-dir", "/out"]
+    stdin_open: true
     volumes:
       - ./out:/out
     networks:

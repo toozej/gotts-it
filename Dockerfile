@@ -39,8 +39,8 @@ RUN apt-get update && apt-get install --no-install-recommends -y coreutils
 FROM gcr.io/distroless/static-debian13:nonroot
 # Copy our static executable.
 COPY --from=build /go/gotts-it/gotts-it /go/bin/gotts-it
-# Expose port for publishing as web service
-# EXPOSE 8081
-# Run the binary.
+# Set working directory for output files
+WORKDIR /out
+# Run the binary as non-root user.
 USER nonroot
 ENTRYPOINT ["/go/bin/gotts-it"]

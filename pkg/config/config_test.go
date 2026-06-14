@@ -9,61 +9,70 @@ import (
 
 func TestGetEnvVars(t *testing.T) {
 	tests := []struct {
-		name               string
-		mockEnv            map[string]string
-		mockEnvFile        string
-		expectError        bool
-		expectURL          string
-		expectFile         string
-		expectOutput       string
-		expectBaseURL      string
-		expectToken        string
-		expectModel        string
-		expectVoice        string
-		expectFormat       string
-		expectSpeed        float64
-		expectTTSTimeout   time.Duration
-		expectFetchTimeout time.Duration
+		name                      string
+		mockEnv                   map[string]string
+		mockEnvFile               string
+		expectError               bool
+		expectURL                 string
+		expectFile                string
+		expectOutput              string
+		expectBaseURL             string
+		expectToken               string
+		expectModel               string
+		expectVoice               string
+		expectFormat              string
+		expectSpeed               float64
+		expectTTSTimeout          time.Duration
+		expectFetchTimeout        time.Duration
+		expectTTSBackend          string
+		expectGoogleTranslateLang string
+		expectOutputDir           string
 	}{
 		{
-			name:               "defaults",
-			mockEnv:            map[string]string{},
-			expectError:        false,
-			expectBaseURL:      "http://localhost:8000/v1",
-			expectModel:        "speaches-ai/Kokoro-82M-v1.0-ONNX",
-			expectVoice:        "af_heart",
-			expectFormat:       "mp3",
-			expectSpeed:        1.0,
-			expectTTSTimeout:   5 * time.Minute,
-			expectFetchTimeout: 30 * time.Second,
+			name:                      "defaults",
+			mockEnv:                   map[string]string{},
+			expectError:               false,
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
+			expectTTSBackend:          "openai",
+			expectGoogleTranslateLang: "en",
 		},
 		{
 			name: "URL from env",
 			mockEnv: map[string]string{
 				"URL": "https://example.com/article",
 			},
-			expectURL:          "https://example.com/article",
-			expectBaseURL:      "http://localhost:8000/v1",
-			expectModel:        "speaches-ai/Kokoro-82M-v1.0-ONNX",
-			expectVoice:        "af_heart",
-			expectFormat:       "mp3",
-			expectSpeed:        1.0,
-			expectTTSTimeout:   5 * time.Minute,
-			expectFetchTimeout: 30 * time.Second,
+			expectURL:                 "https://example.com/article",
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
+			expectTTSBackend:          "openai",
+			expectGoogleTranslateLang: "en",
 		},
 		{
 			name: "FILE from env",
 			mockEnv: map[string]string{
 				"FILE": "/tmp/article.html",
 			},
-			expectFile:         "/tmp/article.html",
-			expectBaseURL:      "http://localhost:8000/v1",
-			expectModel:        "speaches-ai/Kokoro-82M-v1.0-ONNX",
-			expectVoice:        "af_heart",
-			expectFormat:       "mp3",
-			expectSpeed:        1.0,
-			expectTTSTimeout:   5 * time.Minute,
-			expectFetchTimeout: 30 * time.Second,
+			expectFile:                "/tmp/article.html",
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
+			expectTTSBackend:          "openai",
+			expectGoogleTranslateLang: "en",
 		},
 		{
 			name: "all TTS env vars",
@@ -77,27 +86,77 @@ func TestGetEnvVars(t *testing.T) {
 				"TTS_TIMEOUT":     "2m",
 				"FETCH_TIMEOUT":   "10s",
 			},
-			expectBaseURL:      "http://speaches:8000/v1",
-			expectToken:        "test-key",
-			expectModel:        "custom-model",
-			expectVoice:        "custom-voice",
-			expectFormat:       "wav",
-			expectSpeed:        1.5,
-			expectTTSTimeout:   2 * time.Minute,
-			expectFetchTimeout: 10 * time.Second,
+			expectBaseURL:             "http://speaches:8000/v1",
+			expectToken:               "test-key",
+			expectModel:               "custom-model",
+			expectVoice:               "custom-voice",
+			expectFormat:              "wav",
+			expectSpeed:               1.5,
+			expectTTSTimeout:          2 * time.Minute,
+			expectFetchTimeout:        10 * time.Second,
+			expectTTSBackend:          "openai",
+			expectGoogleTranslateLang: "en",
 		},
 		{
-			name:               "env overrides .env file",
-			mockEnv:            map[string]string{"URL": "https://env.example.com"},
-			mockEnvFile:        "URL=https://file.example.com\n",
-			expectURL:          "https://env.example.com",
-			expectBaseURL:      "http://localhost:8000/v1",
-			expectModel:        "speaches-ai/Kokoro-82M-v1.0-ONNX",
-			expectVoice:        "af_heart",
-			expectFormat:       "mp3",
-			expectSpeed:        1.0,
-			expectTTSTimeout:   5 * time.Minute,
-			expectFetchTimeout: 30 * time.Second,
+			name:                      "env overrides .env file",
+			mockEnv:                   map[string]string{"URL": "https://env.example.com"},
+			mockEnvFile:               "URL=https://file.example.com\n",
+			expectURL:                 "https://env.example.com",
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
+			expectTTSBackend:          "openai",
+			expectGoogleTranslateLang: "en",
+		},
+		{
+			name: "TTS backend from env",
+			mockEnv: map[string]string{
+				"TTS_BACKEND": "google",
+			},
+			expectTTSBackend:          "google",
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
+			expectGoogleTranslateLang: "en",
+		},
+		{
+			name: "Google Translate lang from env",
+			mockEnv: map[string]string{
+				"GOOGLE_TRANSLATE_LANG": "fr",
+			},
+			expectGoogleTranslateLang: "fr",
+			expectTTSBackend:          "openai",
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
+		},
+		{
+			name: "OutputDir from env",
+			mockEnv: map[string]string{
+				"OUTPUT_DIR": "/tmp/audio",
+			},
+			expectOutputDir:           "/tmp/audio",
+			expectTTSBackend:          "openai",
+			expectGoogleTranslateLang: "en",
+			expectBaseURL:             "http://localhost:8000/v1",
+			expectModel:               "speaches-ai/Kokoro-82M-v1.0-ONNX",
+			expectVoice:               "af_heart",
+			expectFormat:              "mp3",
+			expectSpeed:               1.0,
+			expectTTSTimeout:          5 * time.Minute,
+			expectFetchTimeout:        30 * time.Second,
 		},
 	}
 
@@ -114,6 +173,7 @@ func TestGetEnvVars(t *testing.T) {
 				"TTS_MODEL", "TTS_VOICE", "TTS_FORMAT",
 				"TTS_SPEED", "TTS_INSTRUCTIONS",
 				"TTS_TIMEOUT", "FETCH_TIMEOUT",
+				"TTS_BACKEND", "GOOGLE_TRANSLATE_LANG", "OUTPUT_DIR",
 			}
 			origVals := map[string]string{}
 			for _, k := range envVarsToClean {
@@ -182,6 +242,15 @@ func TestGetEnvVars(t *testing.T) {
 			}
 			if conf.FetchTimeout != tt.expectFetchTimeout {
 				t.Errorf("expected FetchTimeout %v, got %v", tt.expectFetchTimeout, conf.FetchTimeout)
+			}
+			if conf.TTSBackend != tt.expectTTSBackend {
+				t.Errorf("expected TTSBackend %q, got %q", tt.expectTTSBackend, conf.TTSBackend)
+			}
+			if conf.GoogleTranslateLang != tt.expectGoogleTranslateLang {
+				t.Errorf("expected GoogleTranslateLang %q, got %q", tt.expectGoogleTranslateLang, conf.GoogleTranslateLang)
+			}
+			if conf.OutputDir != tt.expectOutputDir {
+				t.Errorf("expected OutputDir %q, got %q", tt.expectOutputDir, conf.OutputDir)
 			}
 		})
 	}

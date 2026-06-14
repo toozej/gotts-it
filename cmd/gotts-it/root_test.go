@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/toozej/gotts-it/internal/article"
+	"github.com/toozej/gotts-it/internal/tts"
 	"github.com/toozej/gotts-it/pkg/config"
 )
 
@@ -43,7 +46,7 @@ func TestRootCmdHasSubcommands(t *testing.T) {
 		subcommandNames[cmd.Name()] = true
 	}
 
-	for _, name := range []string{"man", "version"} {
+	for _, name := range []string{"man", "version", "server"} {
 		if !subcommandNames[name] {
 			t.Errorf("expected subcommand '%s' to be registered", name)
 		}
@@ -88,11 +91,22 @@ func TestRootCmdLocalFlags(t *testing.T) {
 }
 
 func TestRootCmdLocalFlagsNoShorthand(t *testing.T) {
-	for _, name := range []string{"format", "voice", "model", "speed", "instructions", "fetch-timeout", "tts-timeout"} {
+	for _, name := range []string{} {
 		t.Run(name+" flag", func(t *testing.T) {
 			flag := rootCmd.Flags().Lookup(name)
 			if flag == nil {
 				t.Fatalf("expected local flag '%s' to be registered", name)
+			}
+		})
+	}
+}
+
+func TestRootCmdPersistentFlagsNoShorthand(t *testing.T) {
+	for _, name := range []string{"format", "voice", "model", "speed", "instructions", "fetch-timeout", "tts-timeout", "output-dir", "tts-backend", "lang"} {
+		t.Run(name+" flag", func(t *testing.T) {
+			flag := rootCmd.PersistentFlags().Lookup(name)
+			if flag == nil {
+				t.Fatalf("expected persistent flag '%s' to be registered", name)
 			}
 		})
 	}
@@ -151,7 +165,7 @@ func TestOutputFlagParsing(t *testing.T) {
 }
 
 func TestFormatFlagParsing(t *testing.T) {
-	flag := rootCmd.Flags().Lookup("format")
+	flag := rootCmd.PersistentFlags().Lookup("format")
 	if flag == nil {
 		t.Fatal("expected 'format' flag to exist")
 	}
@@ -161,21 +175,21 @@ func TestFormatFlagParsing(t *testing.T) {
 }
 
 func TestVoiceFlagParsing(t *testing.T) {
-	flag := rootCmd.Flags().Lookup("voice")
+	flag := rootCmd.PersistentFlags().Lookup("voice")
 	if flag == nil {
 		t.Fatal("expected 'voice' flag to exist")
 	}
 }
 
 func TestModelFlagParsing(t *testing.T) {
-	flag := rootCmd.Flags().Lookup("model")
+	flag := rootCmd.PersistentFlags().Lookup("model")
 	if flag == nil {
 		t.Fatal("expected 'model' flag to exist")
 	}
 }
 
 func TestSpeedFlagParsing(t *testing.T) {
-	flag := rootCmd.Flags().Lookup("speed")
+	flag := rootCmd.PersistentFlags().Lookup("speed")
 	if flag == nil {
 		t.Fatal("expected 'speed' flag to exist")
 	}
@@ -287,6 +301,7 @@ func TestRootCmdRun_WithFile(t *testing.T) {
 	conf = config.Config{
 		File:          htmlFile,
 		Output:        outputPath,
+		TTSBackend:    "openai",
 		OpenAIBaseURL: srv.URL + "/v1",
 		OpenAIToken:   "test-key",
 		TTSModel:      "test-model",
@@ -315,6 +330,7 @@ func TestRootCmdRun_WithURLError(t *testing.T) {
 	defer func() { conf = origConf }()
 	conf = config.Config{
 		URL:           "http://localhost:1/fail",
+		TTSBackend:    "openai",
 		OpenAIBaseURL: "http://localhost:1/v1",
 		OpenAIToken:   "test-key",
 		TTSModel:      "test-model",
@@ -351,6 +367,7 @@ func TestRootCmdRun_TTSError(t *testing.T) {
 	defer func() { conf = origConf }()
 	conf = config.Config{
 		File:          htmlFile,
+		TTSBackend:    "openai",
 		OpenAIBaseURL: srv.URL + "/v1",
 		OpenAIToken:   "test-key",
 		TTSModel:      "test-model",
@@ -462,6 +479,7 @@ func TestRootCmdRun_WithURLOnServer(t *testing.T) {
 	conf = config.Config{
 		URL:           httpSrv.URL,
 		Output:        outputPath,
+		TTSBackend:    "openai",
 		OpenAIBaseURL: ttsSrv.URL + "/v1",
 		OpenAIToken:   "test-key",
 		TTSModel:      "test-model",
@@ -482,5 +500,263 @@ func TestRootCmdRun_WithURLOnServer(t *testing.T) {
 	}
 	if string(data) != "audio-data" {
 		t.Errorf("expected 'audio-data', got %q", string(data))
+	}
+}
+
+func TestOutputDirFlag(t *testing.T) {
+	flag := rootCmd.PersistentFlags().Lookup("output-dir")
+	if flag == nil {
+		t.Fatal("expected 'output-dir' flag to exist")
+	}
+}
+
+func TestDefaultOutputPath_WithOutputDir(t *testing.T) {
+	origConf := conf
+	defer func() { conf = origConf }()
+
+	tmpDir := t.TempDir()
+	htmlContent := `<!DOCTYPE html><html><head><title>OutputDir Article</title></head><body><p>Hello.</p></body></html>`
+	htmlFile := filepath.Join(tmpDir, "article.html")
+	if err := os.WriteFile(htmlFile, []byte(htmlContent), 0644); err != nil {
+		t.Fatalf("write html file: %v", err)
+	}
+
+	outputDir := filepath.Join(tmpDir, "audio_output")
+
+	conf = config.Config{
+		File:          htmlFile,
+		OutputDir:     outputDir,
+		Output:        "",
+		TTSBackend:    "openai",
+		OpenAIBaseURL: "http://localhost:8000/v1",
+		OpenAIToken:   "test-key",
+		TTSModel:      "test-model",
+		TTSVoice:      "test-voice",
+		TTSFormat:     "mp3",
+		TTSSpeed:      1.0,
+		TTSTimeout:    10 * time.Second,
+		FetchTimeout:  30 * time.Second,
+	}
+
+	outputPathResult := conf.Output
+	if outputPathResult == "" {
+		outputPathResult = defaultOutputPath(article.Article{Title: "OutputDir Article", Text: "test"}, conf.TTSFormat)
+	}
+	if conf.Output == "" && conf.OutputDir != "" {
+		outputPathResult = filepath.Join(conf.OutputDir, filepath.Base(outputPathResult))
+	}
+
+	if !strings.HasPrefix(outputPathResult, outputDir) {
+		t.Errorf("expected output path to start with %q, got %q", outputDir, outputPathResult)
+	}
+	if !strings.HasSuffix(outputPathResult, ".mp3") {
+		t.Errorf("expected output path to end with .mp3, got %q", outputPathResult)
+	}
+}
+
+func TestRootCmdRunE_WithOutputDir(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := w.Write([]byte("fake-audio")); err != nil {
+			t.Logf("warning: write response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	htmlContent := `<!DOCTYPE html><html><head><title>OutputDir Test</title></head><body><p>Hello.</p></body></html>`
+	htmlFile := filepath.Join(tmpDir, "article.html")
+	if err := os.WriteFile(htmlFile, []byte(htmlContent), 0644); err != nil {
+		t.Fatalf("write html file: %v", err)
+	}
+
+	outputDir := filepath.Join(tmpDir, "audio_out")
+
+	origConf := conf
+	defer func() { conf = origConf }()
+	conf = config.Config{
+		File:          htmlFile,
+		OutputDir:     outputDir,
+		TTSBackend:    "openai",
+		OpenAIBaseURL: srv.URL + "/v1",
+		OpenAIToken:   "test-key",
+		TTSModel:      "test-model",
+		TTSVoice:      "test-voice",
+		TTSFormat:     "mp3",
+		TTSSpeed:      1.0,
+		TTSTimeout:    10 * time.Second,
+		FetchTimeout:  30 * time.Second,
+	}
+
+	if err := rootCmdRunE(rootCmd, []string{}); err != nil {
+		t.Fatalf("rootCmdRunE: %v", err)
+	}
+
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		t.Fatalf("read output dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected output file in output directory")
+	}
+
+	found := false
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".mp3") {
+			found = true
+			data, err := os.ReadFile(filepath.Join(outputDir, e.Name()))
+			if err != nil {
+				t.Fatalf("read output file: %v", err)
+			}
+			if string(data) != "fake-audio" {
+				t.Errorf("expected 'fake-audio', got %q", string(data))
+			}
+		}
+	}
+	if !found {
+		t.Error("expected mp3 file in output directory")
+	}
+}
+
+func TestRootCmdRunE_OutputDirAndOutputFlag_OutputTakesPrecedence(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := w.Write([]byte("fake-audio")); err != nil {
+			t.Logf("warning: write response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	htmlContent := `<!DOCTYPE html><html><head><title>Precedence Test</title></head><body><p>Hello.</p></body></html>`
+	htmlFile := filepath.Join(tmpDir, "article.html")
+	if err := os.WriteFile(htmlFile, []byte(htmlContent), 0644); err != nil {
+		t.Fatalf("write html file: %v", err)
+	}
+
+	explicitOutput := filepath.Join(tmpDir, "explicit-output.mp3")
+	outputDir := filepath.Join(tmpDir, "audio_out")
+
+	origConf := conf
+	defer func() { conf = origConf }()
+	conf = config.Config{
+		File:          htmlFile,
+		Output:        explicitOutput,
+		OutputDir:     outputDir,
+		TTSBackend:    "openai",
+		OpenAIBaseURL: srv.URL + "/v1",
+		OpenAIToken:   "test-key",
+		TTSModel:      "test-model",
+		TTSVoice:      "test-voice",
+		TTSFormat:     "mp3",
+		TTSSpeed:      1.0,
+		TTSTimeout:    10 * time.Second,
+		FetchTimeout:  30 * time.Second,
+	}
+
+	if err := rootCmdRunE(rootCmd, []string{}); err != nil {
+		t.Fatalf("rootCmdRunE: %v", err)
+	}
+
+	data, err := os.ReadFile(explicitOutput)
+	if err != nil {
+		t.Fatalf("read explicit output: %v", err)
+	}
+	if string(data) != "fake-audio" {
+		t.Errorf("expected 'fake-audio', got %q", string(data))
+	}
+
+	if _, err := os.Stat(outputDir); err == nil {
+		entries, _ := os.ReadDir(outputDir)
+		if len(entries) > 0 {
+			t.Error("expected output-dir to be ignored when --output is specified")
+		}
+	}
+}
+
+func TestTTSBackendFlag(t *testing.T) {
+	flag := rootCmd.PersistentFlags().Lookup("tts-backend")
+	if flag == nil {
+		t.Fatal("expected 'tts-backend' flag to exist")
+	}
+	if flag.DefValue != "openai" {
+		t.Errorf("expected tts-backend default 'openai', got '%s'", flag.DefValue)
+	}
+}
+
+func TestGoogleTranslateLangFlag(t *testing.T) {
+	flag := rootCmd.PersistentFlags().Lookup("lang")
+	if flag == nil {
+		t.Fatal("expected 'lang' flag to exist")
+	}
+	if flag.DefValue != "en" {
+		t.Errorf("expected lang default 'en', got '%s'", flag.DefValue)
+	}
+}
+
+func TestRootCmdRunWithGoogleBackend(t *testing.T) {
+	orig := tts.GtranslateRequest
+	defer func() { tts.GtranslateRequest = orig }()
+
+	tts.GtranslateRequest = func(ctx context.Context, client *http.Client, text, lang string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("google-audio")), nil
+	}
+
+	tmpDir := t.TempDir()
+	htmlContent := `<!DOCTYPE html><html><head><title>Google TTS Test</title></head><body><p>Hello world.</p></body></html>`
+	htmlFile := filepath.Join(tmpDir, "article.html")
+	if err := os.WriteFile(htmlFile, []byte(htmlContent), 0644); err != nil {
+		t.Fatalf("write html file: %v", err)
+	}
+
+	outputPath := filepath.Join(tmpDir, "google-output.mp3")
+
+	origConf := conf
+	defer func() { conf = origConf }()
+	conf = config.Config{
+		File:                htmlFile,
+		Output:              outputPath,
+		TTSBackend:          "google",
+		GoogleTranslateLang: "en",
+		TTSFormat:           "mp3",
+		TTSTimeout:          10 * time.Second,
+		FetchTimeout:        30 * time.Second,
+	}
+
+	if err := rootCmdRunE(rootCmd, []string{}); err != nil {
+		t.Fatalf("rootCmdRunE: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(data) != "google-audio" {
+		t.Errorf("expected 'google-audio', got %q", string(data))
+	}
+}
+
+func TestRootCmdRunWithInvalidBackend(t *testing.T) {
+	tmpDir := t.TempDir()
+	htmlContent := `<!DOCTYPE html><html><head><title>Invalid Backend</title></head><body><p>Hello.</p></body></html>`
+	htmlFile := filepath.Join(tmpDir, "article.html")
+	if err := os.WriteFile(htmlFile, []byte(htmlContent), 0644); err != nil {
+		t.Fatalf("write html file: %v", err)
+	}
+
+	origConf := conf
+	defer func() { conf = origConf }()
+	conf = config.Config{
+		File:         htmlFile,
+		TTSBackend:   "invalid",
+		TTSFormat:    "mp3",
+		TTSTimeout:   10 * time.Second,
+		FetchTimeout: 30 * time.Second,
+	}
+
+	err := rootCmdRunE(rootCmd, []string{})
+	if err == nil {
+		t.Error("expected error for invalid TTS backend")
+	}
+	if !strings.Contains(err.Error(), "unknown TTS backend") {
+		t.Errorf("expected 'unknown TTS backend' in error, got %q", err.Error())
 	}
 }

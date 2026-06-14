@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -37,14 +38,16 @@ var rootCmd = &cobra.Command{
 	Use:   "gotts-it",
 	Short: "Extract article text from a URL or file and synthesize speech via an OpenAI-compatible TTS server",
 	Long: `gotts-it extracts readable article text from a URL or local HTML
-file, then synthesizes speech via an OpenAI-compatible TTS server (e.g. Speaches).
+file, then synthesizes speech via an OpenAI-compatible TTS server (e.g. Speaches)
+or Google Translate TTS.
 
 Exactly one of --url or --file is required.
 
 Examples:
 gotts-it --url https://en.wikipedia.org/wiki/Readability
 gotts-it --file article.html -o article.mp3
-gotts-it --url https://example.com/post --format wav --speed 1.5`,
+gotts-it --url https://example.com/post --format wav --speed 1.5
+gotts-it --url https://example.com/post --tts-backend google --lang fr`,
 	Args:             cobra.ExactArgs(0),
 	PersistentPreRun: rootCmdPreRun,
 	RunE:             rootCmdRunE,
@@ -69,19 +72,40 @@ func rootCmdRunE(cmd *cobra.Command, args []string) error {
 		outputPath = defaultOutputPath(art, conf.TTSFormat)
 	}
 
-	opts := tts.Options{
-		BaseURL:      conf.OpenAIBaseURL,
-		APIKey:       conf.OpenAIToken,
-		Model:        conf.TTSModel,
-		Voice:        conf.TTSVoice,
-		Format:       conf.TTSFormat,
-		Speed:        conf.TTSSpeed,
-		Instructions: conf.TTSInstructions,
-		Timeout:      conf.TTSTimeout,
+	if conf.Output == "" && conf.OutputDir != "" {
+		outputPath = filepath.Join(conf.OutputDir, filepath.Base(outputPath))
+		if err := os.MkdirAll(conf.OutputDir, 0750); err != nil {
+			return fmt.Errorf("create output directory %s: %w", conf.OutputDir, err)
+		}
 	}
-	if err := tts.Synthesize(ctx, art.Text, outputPath, opts); err != nil {
-		return fmt.Errorf("synthesize speech: %w", err)
+
+	switch conf.TTSBackend {
+	case "openai":
+		opts := tts.Options{
+			BaseURL:      conf.OpenAIBaseURL,
+			APIKey:       conf.OpenAIToken,
+			Model:        conf.TTSModel,
+			Voice:        conf.TTSVoice,
+			Format:       conf.TTSFormat,
+			Speed:        conf.TTSSpeed,
+			Instructions: conf.TTSInstructions,
+			Timeout:      conf.TTSTimeout,
+		}
+		if err := tts.Synthesize(ctx, art.Text, outputPath, opts); err != nil {
+			return fmt.Errorf("synthesize speech: %w", err)
+		}
+	case "google":
+		gopts := tts.GoogleTranslateOptions{
+			Lang:    conf.GoogleTranslateLang,
+			Timeout: conf.TTSTimeout,
+		}
+		if err := tts.SynthesizeGoogleTranslate(ctx, art.Text, outputPath, gopts); err != nil {
+			return fmt.Errorf("synthesize speech: %w", err)
+		}
+	default:
+		return fmt.Errorf("unknown TTS backend %q: use \"openai\" or \"google\"", conf.TTSBackend)
 	}
+
 	log.Infof("wrote audio to %s", outputPath)
 	return nil
 }
@@ -134,13 +158,16 @@ func init() {
 	rootCmd.Flags().StringVarP(&conf.URL, "url", "U", conf.URL, "Article URL to fetch and convert to speech")
 	rootCmd.Flags().StringVarP(&conf.File, "file", "f", conf.File, "Local HTML or text file to convert to speech")
 	rootCmd.Flags().StringVarP(&conf.Output, "output", "o", conf.Output, "Output audio file path (default: derived from article title)")
-	rootCmd.Flags().StringVar(&conf.TTSFormat, "format", conf.TTSFormat, "Output audio format (mp3, wav, flac, pcm)")
-	rootCmd.Flags().StringVar(&conf.TTSVoice, "voice", conf.TTSVoice, "TTS voice ID")
-	rootCmd.Flags().StringVar(&conf.TTSModel, "model", conf.TTSModel, "TTS model ID")
-	rootCmd.Flags().Float64Var(&conf.TTSSpeed, "speed", conf.TTSSpeed, "Speech speed (0.25 to 4.0)")
-	rootCmd.Flags().StringVar(&conf.TTSInstructions, "instructions", conf.TTSInstructions, "Model instructions (ignored by tts-1/tts-1-hd)")
-	rootCmd.Flags().DurationVar(&conf.FetchTimeout, "fetch-timeout", conf.FetchTimeout, "Timeout for fetching article URL")
-	rootCmd.Flags().DurationVar(&conf.TTSTimeout, "tts-timeout", conf.TTSTimeout, "Timeout per TTS chunk request")
+	rootCmd.PersistentFlags().StringVar(&conf.OutputDir, "output-dir", conf.OutputDir, "Output directory for audio files (default: current directory)")
+	rootCmd.PersistentFlags().StringVar(&conf.TTSFormat, "format", conf.TTSFormat, "Output audio format (mp3, wav, flac, pcm)")
+	rootCmd.PersistentFlags().StringVar(&conf.TTSVoice, "voice", conf.TTSVoice, "TTS voice ID")
+	rootCmd.PersistentFlags().StringVar(&conf.TTSModel, "model", conf.TTSModel, "TTS model ID")
+	rootCmd.PersistentFlags().Float64Var(&conf.TTSSpeed, "speed", conf.TTSSpeed, "Speech speed (0.25 to 4.0)")
+	rootCmd.PersistentFlags().StringVar(&conf.TTSInstructions, "instructions", conf.TTSInstructions, "Model instructions (ignored by tts-1/tts-1-hd)")
+	rootCmd.PersistentFlags().DurationVar(&conf.FetchTimeout, "fetch-timeout", conf.FetchTimeout, "Timeout for fetching article URL")
+	rootCmd.PersistentFlags().DurationVar(&conf.TTSTimeout, "tts-timeout", conf.TTSTimeout, "Timeout per TTS chunk request")
+	rootCmd.PersistentFlags().StringVar(&conf.TTSBackend, "tts-backend", conf.TTSBackend, "TTS backend: openai or google")
+	rootCmd.PersistentFlags().StringVar(&conf.GoogleTranslateLang, "lang", conf.GoogleTranslateLang, "Language for Google Translate TTS (e.g. en, fr, de)")
 
 	rootCmd.MarkFlagsOneRequired("url", "file")
 	rootCmd.MarkFlagsMutuallyExclusive("url", "file")
@@ -149,5 +176,6 @@ func init() {
 		man.NewManCmd(),
 		version.Command(),
 		newAvatarCmd(),
+		newServerCmd(),
 	)
 }

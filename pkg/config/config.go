@@ -74,6 +74,12 @@ type Config struct {
 	TTSTimeout time.Duration `env:"TTS_TIMEOUT" envDefault:"5m"`
 	// FetchTimeout is the HTTP request timeout for fetching an article URL.
 	FetchTimeout time.Duration `env:"FETCH_TIMEOUT" envDefault:"30s"`
+	// OutputDir is the output directory for audio files (default: current directory).
+	OutputDir string `env:"OUTPUT_DIR"`
+	// TTSBackend selects the TTS backend: "openai" or "google".
+	TTSBackend string `env:"TTS_BACKEND" envDefault:"openai"`
+	// GoogleTranslateLang is the language code for Google Translate TTS (e.g. en, fr, de).
+	GoogleTranslateLang string `env:"GOOGLE_TRANSLATE_LANG" envDefault:"en"`
 }
 
 // GetEnvVars loads and returns the application configuration from environment
