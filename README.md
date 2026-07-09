@@ -1,5 +1,10 @@
 # gotts-it
 
+**This repository has moved to [monogo](https://github.com/toozej/monogo).**
+
+
+
+
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/toozej/gotts-it)
 [![Go Report Card](https://goreportcard.com/badge/github.com/toozej/gotts-it)](https://goreportcard.com/report/github.com/toozej/gotts-it)
 ![GitHub Actions CI Workflow Status](https://img.shields.io/github/actions/workflow/status/toozej/gotts-it/ci.yaml)
